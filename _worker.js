@@ -26,7 +26,7 @@ const CONFIG = {
   maxBodySize: 10 * 1024 * 1024, // 10MB
 
   // 自定义 User-Agent
-  userAgent: 'Cloudflare-Workers-Proxy/2.1',
+  userAgent: 'Cloudflare-Workers-Proxy/1.1',
 
   // 域名黑名单（禁止代理的域名）
   blockedDomains: [
@@ -762,4 +762,3 @@ function getUsageHTML() {
 </body>
 </html>`;
 }
-
