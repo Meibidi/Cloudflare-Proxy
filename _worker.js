@@ -23,16 +23,78 @@ const CONFIG = {
   requestTimeout: 30000,
 
   // 最大请求体大小（字节，0 表示不限制）
-  maxBodySize: 0, // 10 * 1024 * 1024 10MB
+  maxBodySize: 10 * 1024 * 1024, // 10MB
 
   // 自定义 User-Agent
   userAgent: 'Cloudflare-Workers-Proxy/2.1',
 
-  // 域名黑名单
-  blockedDomains: ['localhost', '127.0.0.1', '0.0.0.0', '::1'],
+  // 域名黑名单（禁止代理的域名）
+  blockedDomains: [
+    // 本地地址
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '::1',
 
-  // 域名白名单（留空表示允许所有）
+    // 内网地址段（通过域名匹配）
+    '10.',
+    '172.16.',
+    '192.168.',
+    'internal',
+    'local',
+
+    // 容器镜像仓库（通常需要认证，代理意义不大）
+    'docker.io',
+    'hub.docker.com',
+    'registry.hub.docker.com',
+    'docker.com',
+    'registry-1.docker.io',
+    'ghcr.io', // GitHub Container Registry
+    'gcr.io', // Google Container Registry
+    'quay.io', // Red Hat Quay
+    'mcr.microsoft.com', // Microsoft Container Registry
+
+    // 云服务商内部服务（可能导致安全问题）
+    'metadata.google.internal',
+    '169.254.169.254', // AWS/GCP metadata service
+    'kubernetes.default.svc',
+    'rancher.internal',
+
+    // 金融支付相关（安全考虑）
+    'paypal.com',
+    'stripe.com',
+    'alipay.com',
+    'pay.weixin.qq.com',
+
+    // 政府和敏感机构
+    'gov.cn',
+    'mil.cn',
+    'gov',
+    'mil',
+
+    // 可能被滥用的服务
+    'ipify.org',
+    'ifconfig.me',
+    'icanhazip.com',
+    'api.ipify.org',
+  ],
+
+  // 域名白名单（留空表示允许所有，建议生产环境配置）
   allowedDomains: [],
+
+  // 危险路径黑名单（防止路径遍历和敏感文件访问）
+  blockedPaths: [
+    '/.env',
+    '/.git',
+    '/admin',
+    '/phpmyadmin',
+    '/.aws',
+    '/.ssh',
+    '/etc/passwd',
+    '/etc/shadow',
+    '/../',
+    '/./.',
+  ],
 
   // 是否启用详细错误信息（生产环境建议关闭）
   verboseErrors: false,
@@ -111,21 +173,54 @@ export default {
       // 域名验证
       const hostname = upstreamUrl.hostname.toLowerCase();
 
-      if (CONFIG.blockedDomains.some(d => hostname === d || hostname.endsWith('.' + d))) {
+      // 检查黑名单
+      if (CONFIG.blockedDomains.some(d =>
+        hostname === d ||
+        hostname.endsWith('.' + d) ||
+        hostname.startsWith(d) ||
+        hostname.includes(d)
+      )) {
         return corsResponse(jsonResponse({
           error: 'Forbidden',
-          message: 'Domain is blocked',
+          message: 'Domain is blocked by security policy',
           domain: hostname,
+          reason: 'This domain is in the blocklist for security or compliance reasons',
         }, 403));
       }
 
+      // 检查白名单
       if (CONFIG.allowedDomains.length > 0 &&
           !CONFIG.allowedDomains.some(d => hostname === d || hostname.endsWith('.' + d))) {
         return corsResponse(jsonResponse({
           error: 'Forbidden',
           message: 'Domain not in allowed list',
           domain: hostname,
+          hint: 'Only whitelisted domains are permitted',
         }, 403));
+      }
+
+      // 路径安全检查
+      const path = upstreamUrl.pathname.toLowerCase();
+      if (CONFIG.blockedPaths && CONFIG.blockedPaths.some(p => path.includes(p))) {
+        return corsResponse(jsonResponse({
+          error: 'Forbidden',
+          message: 'Requested path contains blocked patterns',
+          path: upstreamUrl.pathname,
+          reason: 'This path is blocked for security reasons',
+        }, 403));
+      }
+
+      // IP 地址直接访问检查（防止内网探测）
+      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || /^\[?[0-9a-f:]+\]?$/i.test(hostname)) {
+        // 检查是否是私有 IP
+        if (isPrivateIP(hostname)) {
+          return corsResponse(jsonResponse({
+            error: 'Forbidden',
+            message: 'Direct access to private IP addresses is not allowed',
+            ip: hostname,
+            reason: 'Security policy prevents access to internal networks',
+          }, 403));
+        }
       }
 
       // 请求体大小检查
@@ -391,6 +486,45 @@ function jsonResponse(data, status = 200) {
  */
 function isRedirect(status) {
   return [301, 302, 303, 307, 308].includes(status);
+}
+
+/**
+ * 检查是否为私有 IP 地址
+ */
+function isPrivateIP(ip) {
+  // IPv6 本地地址
+  if (ip.includes(':')) {
+    return ip.startsWith('fe80:') ||
+           ip.startsWith('fc00:') ||
+           ip.startsWith('fd00:') ||
+           ip === '::1';
+  }
+
+  // IPv4 私有地址
+  const parts = ip.split('.').map(p => parseInt(p, 10));
+  if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
+    return false;
+  }
+
+  // 10.0.0.0/8
+  if (parts[0] === 10) return true;
+
+  // 172.16.0.0/12
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+
+  // 192.168.0.0/16
+  if (parts[0] === 192 && parts[1] === 168) return true;
+
+  // 127.0.0.0/8 (loopback)
+  if (parts[0] === 127) return true;
+
+  // 169.254.0.0/16 (link-local)
+  if (parts[0] === 169 && parts[1] === 254) return true;
+
+  // 0.0.0.0/8
+  if (parts[0] === 0) return true;
+
+  return false;
 }
 
 /* ========== 使用说明页面 ========== */
