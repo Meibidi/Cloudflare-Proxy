@@ -116,7 +116,7 @@ export default {
         return jsonResponse({
           status: 'healthy',
           timestamp: new Date().toISOString(),
-          version: '2.1',
+          version: '1.1',
         });
       }
 
