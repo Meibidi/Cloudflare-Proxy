@@ -281,7 +281,7 @@ export default {
 
       // 添加调试和性能头
       const finalHeaders = new Headers(response.headers);
-      finalHeaders.set('x-proxy-by', 'Cloudflare-Workers-Enhanced-v2.1');
+      finalHeaders.set('x-proxy-by', 'Cloudflare-Workers-Enhanced-v1.1');
       finalHeaders.set('x-target-url', upstreamUrl.toString());
 
       if (CONFIG.enableMetrics) {
@@ -732,7 +732,7 @@ function getUsageHTML() {
     <div class="section">
       <h2>⚙️ 当前配置</h2>
       <ul>
-        <li><strong>版本：</strong>v2.1 优化增强版</li>
+        <li><strong>版本：</strong>v1.1 优化增强版</li>
         <li><strong>用户认证：</strong>${CONFIG.authUser ? `已启用 (${CONFIG.authUser})` : '未启用'}</li>
         <li><strong>默认协议：</strong>${CONFIG.defaultProtocol.toUpperCase()}</li>
         <li><strong>最大重定向：</strong>${CONFIG.maxRedirects} 次</li>
@@ -755,10 +755,11 @@ function getUsageHTML() {
     </div>
 
     <div class="footer">
-      Powered by Cloudflare Workers | Enhanced Dynamic Proxy v2.1<br>
+      Powered by Cloudflare Workers | Enhanced Dynamic Proxy v1.1<br>
       <small>⚡ 高性能 · 🔒 安全可靠 · 🌍 全球加速</small>
     </div>
   </div>
 </body>
 </html>`;
 }
+
