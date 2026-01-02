@@ -125,7 +125,7 @@ export default {
         return corsResponse(
           new Response(getUsageHTML(), {
             headers: { 'content-type': 'text/html; charset=utf-8' },
-          })
+          }),
         );
       }
 
@@ -145,7 +145,9 @@ export default {
       // 用户认证检查
       if (CONFIG.authUser) {
         if (parts.length < 2) {
-          return corsResponse(textResponse('Bad Request: Invalid path format', 400));
+          return corsResponse(
+            textResponse('Bad Request: Invalid path format', 400),
+          );
         }
         if (parts[0] !== CONFIG.authUser) {
           return corsResponse(textResponse('Forbidden: Invalid user', 403));
@@ -154,7 +156,9 @@ export default {
       }
 
       if (parts.length <= startIndex) {
-        return corsResponse(textResponse('Bad Request: No target specified', 400));
+        return corsResponse(
+          textResponse('Bad Request: No target specified', 400),
+        );
       }
 
       // 提取目标 URL
@@ -163,63 +167,102 @@ export default {
 
       // 协议验证
       if (!['http:', 'https:'].includes(upstreamUrl.protocol)) {
-        return corsResponse(jsonResponse({
-          error: 'Invalid Protocol',
-          message: 'Only HTTP and HTTPS protocols are supported',
-          protocol: upstreamUrl.protocol,
-        }, 400));
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Invalid Protocol',
+              message: 'Only HTTP and HTTPS protocols are supported',
+              protocol: upstreamUrl.protocol,
+            },
+            400,
+          ),
+        );
       }
 
       // 域名验证
       const hostname = upstreamUrl.hostname.toLowerCase();
 
       // 检查黑名单
-      if (CONFIG.blockedDomains.some(d =>
-        hostname === d ||
-        hostname.endsWith('.' + d) ||
-        hostname.startsWith(d) ||
-        hostname.includes(d)
-      )) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Domain is blocked by security policy',
-          domain: hostname,
-          reason: 'This domain is in the blocklist for security or compliance reasons',
-        }, 403));
+      if (
+        CONFIG.blockedDomains.some(
+          d =>
+            hostname === d ||
+            hostname.endsWith('.' + d) ||
+            hostname.startsWith(d) ||
+            hostname.includes(d),
+        )
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Domain is blocked by security policy',
+              domain: hostname,
+              reason:
+                'This domain is in the blocklist for security or compliance reasons',
+            },
+            403,
+          ),
+        );
       }
 
       // 检查白名单
-      if (CONFIG.allowedDomains.length > 0 &&
-          !CONFIG.allowedDomains.some(d => hostname === d || hostname.endsWith('.' + d))) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Domain not in allowed list',
-          domain: hostname,
-          hint: 'Only whitelisted domains are permitted',
-        }, 403));
+      if (
+        CONFIG.allowedDomains.length > 0 &&
+        !CONFIG.allowedDomains.some(
+          d => hostname === d || hostname.endsWith('.' + d),
+        )
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Domain not in allowed list',
+              domain: hostname,
+              hint: 'Only whitelisted domains are permitted',
+            },
+            403,
+          ),
+        );
       }
 
       // 路径安全检查
       const path = upstreamUrl.pathname.toLowerCase();
-      if (CONFIG.blockedPaths && CONFIG.blockedPaths.some(p => path.includes(p))) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Requested path contains blocked patterns',
-          path: upstreamUrl.pathname,
-          reason: 'This path is blocked for security reasons',
-        }, 403));
+      if (
+        CONFIG.blockedPaths &&
+        CONFIG.blockedPaths.some(p => path.includes(p))
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Requested path contains blocked patterns',
+              path: upstreamUrl.pathname,
+              reason: 'This path is blocked for security reasons',
+            },
+            403,
+          ),
+        );
       }
 
       // IP 地址直接访问检查（防止内网探测）
-      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || /^\[?[0-9a-f:]+\]?$/i.test(hostname)) {
+      if (
+        /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) ||
+        /^\[?[0-9a-f:]+\]?$/i.test(hostname)
+      ) {
         // 检查是否是私有 IP
         if (isPrivateIP(hostname)) {
-          return corsResponse(jsonResponse({
-            error: 'Forbidden',
-            message: 'Direct access to private IP addresses is not allowed',
-            ip: hostname,
-            reason: 'Security policy prevents access to internal networks',
-          }, 403));
+          return corsResponse(
+            jsonResponse(
+              {
+                error: 'Forbidden',
+                message: 'Direct access to private IP addresses is not allowed',
+                ip: hostname,
+                reason: 'Security policy prevents access to internal networks',
+              },
+              403,
+            ),
+          );
         }
       }
 
@@ -227,11 +270,16 @@ export default {
       if (CONFIG.maxBodySize > 0 && request.body) {
         const contentLength = request.headers.get('content-length');
         if (contentLength && parseInt(contentLength) > CONFIG.maxBodySize) {
-          return corsResponse(jsonResponse({
-            error: 'Payload Too Large',
-            message: `Request body exceeds maximum size of ${CONFIG.maxBodySize} bytes`,
-            maxSize: CONFIG.maxBodySize,
-          }, 413));
+          return corsResponse(
+            jsonResponse(
+              {
+                error: 'Payload Too Large',
+                message: `Request body exceeds maximum size of ${CONFIG.maxBodySize} bytes`,
+                maxSize: CONFIG.maxBodySize,
+              },
+              413,
+            ),
+          );
         }
       }
 
@@ -253,7 +301,7 @@ export default {
           headers,
           body: method === 'GET' || method === 'HEAD' ? null : request.body,
         },
-        CONFIG.requestTimeout
+        CONFIG.requestTimeout,
       );
 
       // 处理响应
@@ -294,9 +342,8 @@ export default {
           status: response.status,
           statusText: response.statusText,
           headers: finalHeaders,
-        })
+        }),
       );
-
     } catch (error) {
       console.error('Proxy Error:', error);
 
@@ -350,7 +397,7 @@ async function fetchWithTimeout(url, options, timeout) {
     const response = await fetchWithRedirect(
       url,
       { ...options, signal: controller.signal },
-      0
+      0,
     );
     clearTimeout(timeoutId);
     return response;
@@ -367,10 +414,12 @@ async function fetchWithTimeout(url, options, timeout) {
  * 支持重定向跟随的 fetch
  */
 async function fetchWithRedirect(url, options, redirectCount = 0) {
-  const response = await fetch(new Request(url, {
-    ...options,
-    redirect: 'manual',
-  }));
+  const response = await fetch(
+    new Request(url, {
+      ...options,
+      redirect: 'manual',
+    }),
+  );
 
   // 检查是否需要跟随重定向
   if (isRedirect(response.status) && redirectCount < CONFIG.maxRedirects) {
@@ -381,7 +430,7 @@ async function fetchWithRedirect(url, options, redirectCount = 0) {
         return await fetchWithRedirect(
           nextUrl.toString(),
           options,
-          redirectCount + 1
+          redirectCount + 1,
         );
       } catch (e) {
         // 重定向 URL 无效，返回原响应
@@ -494,10 +543,12 @@ function isRedirect(status) {
 function isPrivateIP(ip) {
   // IPv6 本地地址
   if (ip.includes(':')) {
-    return ip.startsWith('fe80:') ||
-           ip.startsWith('fc00:') ||
-           ip.startsWith('fd00:') ||
-           ip === '::1';
+    return (
+      ip.startsWith('fe80:') ||
+      ip.startsWith('fc00:') ||
+      ip.startsWith('fd00:') ||
+      ip === '::1'
+    );
   }
 
   // IPv4 私有地址
@@ -658,9 +709,10 @@ function getUsageHTML() {
     <div class="section">
       <h2>📖 使用格式</h2>
       <div class="code-block">
-        ${CONFIG.authUser
-          ? `https://<span class="highlight">您的域名</span>/<span class="highlight">${CONFIG.authUser}</span>/<span class="highlight">目标URL</span>`
-          : `https://<span class="highlight">您的域名</span>/<span class="highlight">目标URL</span>`
+        ${
+          CONFIG.authUser
+            ? `https://<span class="highlight">您的域名</span>/<span class="highlight">${CONFIG.authUser}</span>/<span class="highlight">目标URL</span>`
+            : `https://<span class="highlight">您的域名</span>/<span class="highlight">目标URL</span>`
         }
       </div>
     </div>
@@ -669,9 +721,10 @@ function getUsageHTML() {
       <h2>💡 使用示例</h2>
       <div class="code-block">
         <div class="example">
-          ${CONFIG.authUser
-            ? `访问: https://your-domain.com/${CONFIG.authUser}/api.github.com/users`
-            : `访问: https://your-domain.com/api.github.com/users`
+          ${
+            CONFIG.authUser
+              ? `访问: https://your-domain.com/${CONFIG.authUser}/api.github.com/users`
+              : `访问: https://your-domain.com/api.github.com/users`
           }
         </div>
         <div class="arrow">↓ 实际代理到</div>
@@ -683,9 +736,10 @@ function getUsageHTML() {
       <div class="code-block">
         <div class="example">
           支持查询参数和路径：<br>
-          ${CONFIG.authUser
-            ? `https://your-domain.com/${CONFIG.authUser}/example.com/api/data?key=value`
-            : `https://your-domain.com/example.com/api/data?key=value`
+          ${
+            CONFIG.authUser
+              ? `https://your-domain.com/${CONFIG.authUser}/example.com/api/data?key=value`
+              : `https://your-domain.com/example.com/api/data?key=value`
           }
         </div>
       </div>
@@ -733,15 +787,27 @@ function getUsageHTML() {
       <h2>⚙️ 当前配置</h2>
       <ul>
         <li><strong>版本：</strong>v1.1 优化增强版</li>
-        <li><strong>用户认证：</strong>${CONFIG.authUser ? `已启用 (${CONFIG.authUser})` : '未启用'}</li>
+        <li><strong>用户认证：</strong>${
+          CONFIG.authUser ? `已启用 (${CONFIG.authUser})` : '未启用'
+        }</li>
         <li><strong>默认协议：</strong>${CONFIG.defaultProtocol.toUpperCase()}</li>
         <li><strong>最大重定向：</strong>${CONFIG.maxRedirects} 次</li>
         <li><strong>缓存时间：</strong>${CONFIG.cacheTTL} 秒</li>
         <li><strong>请求超时：</strong>${CONFIG.requestTimeout / 1000} 秒</li>
-        <li><strong>最大请求体：</strong>${CONFIG.maxBodySize > 0 ? (CONFIG.maxBodySize / 1024 / 1024).toFixed(1) + ' MB' : '不限制'}</li>
+        <li><strong>最大请求体：</strong>${
+          CONFIG.maxBodySize > 0
+            ? (CONFIG.maxBodySize / 1024 / 1024).toFixed(1) + ' MB'
+            : '不限制'
+        }</li>
         <li><strong>黑名单域名：</strong>${CONFIG.blockedDomains.length} 个</li>
-        <li><strong>白名单域名：</strong>${CONFIG.allowedDomains.length > 0 ? CONFIG.allowedDomains.length + ' 个' : '全部允许'}</li>
-        <li><strong>性能监控：</strong>${CONFIG.enableMetrics ? '已启用' : '未启用'}</li>
+        <li><strong>白名单域名：</strong>${
+          CONFIG.allowedDomains.length > 0
+            ? CONFIG.allowedDomains.length + ' 个'
+            : '全部允许'
+        }</li>
+        <li><strong>性能监控：</strong>${
+          CONFIG.enableMetrics ? '已启用' : '未启用'
+        }</li>
       </ul>
     </div>
 
@@ -750,7 +816,11 @@ function getUsageHTML() {
       <ul>
         <li><code>/health</code> 或 <code>/ping</code> - 健康检查</li>
         <li><code>/</code> - 使用说明页面</li>
-        ${CONFIG.authUser ? `<li><code>/${CONFIG.authUser}/:target</code> - 代理请求（需认证）</li>` : '<li><code>/:target</code> - 代理请求</li>'}
+        ${
+          CONFIG.authUser
+            ? `<li><code>/${CONFIG.authUser}/:target</code> - 代理请求（需认证）</li>`
+            : '<li><code>/:target</code> - 代理请求</li>'
+        }
       </ul>
     </div>
 
