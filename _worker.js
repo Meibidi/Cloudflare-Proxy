@@ -1,19 +1,8 @@
 /**
- * Cloudflare Workers 动态反向代理 (优化增强版 v2.1)
+ * Cloudflare Workers 动态反向代理
  * 支持通过 URL 路径指定目标地址
  * 格式：https://your-domain.com/target-domain.com/path
  * 示例：https://自定义域名/目的代理URL/api/users
- *
- * v2.1 新增优化：
- * - 请求超时控制
- * - JSON 格式错误响应
- * - 健康检查端点
- * - 请求体大小限制
- * - 增强缓存策略（自定义缓存键）
- * - User-Agent 自定义
- * - 更详细的错误日志
- * - 性能监控指标
- * - 协议验证增强
  */
 
 // ========== 配置区 ==========

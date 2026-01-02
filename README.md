@@ -1,4 +1,4 @@
-# 🚀 Cloudflare Workers 动态反向代理 v2.1
+# 🚀 Cloudflare Workers 动态反向代理
 
 一个简洁、高效、功能强大的 Cloudflare Workers 反向代理服务，支持通过 URL 路径动态指定目标地址。
 
