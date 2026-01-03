@@ -1,93 +1,102 @@
 /**
- * Cloudflare Workers 动态反向代理 v1.2
+ * Cloudflare Workers 动态反向代理
  * 支持通过 URL 路径指定目标地址
  * 格式：https://your-domain.com/target-domain.com/path
- *
- * v1.2 优化：
- * - 增强缓存策略（智能缓存、Edge Cache、条件缓存）
- * - 移除不必要的限速功能（Cloudflare 免费服务无需限速）
- * - 优化请求体处理（移除大小限制）
- * - 增强缓存命中率
+ * 示例：https://自定义域名/目的代理URL/api/users
  */
 
 // ========== 配置区 ==========
 const CONFIG = {
   // 用户认证（留空则禁用认证，启用后格式为: /用户名/目标URL）
-  authUser: '',
+  authUser: '', // 例如: 'admin'
 
   // 默认协议
   defaultProtocol: 'https',
 
   // 最大重定向跟随次数
-  maxRedirects: 5,
+  maxRedirects: 3,
+
+  // 缓存时间（秒，仅 GET 请求）
+  cacheTTL: 3600,
 
   // 请求超时时间（毫秒）
   requestTimeout: 30000,
 
+  // 最大请求体大小（字节，0 表示不限制）
+  maxBodySize: 10 * 1024 * 1024, // 10MB
+
   // 自定义 User-Agent
-  userAgent: 'Cloudflare-Workers-Proxy/1.2',
-
-  // ========== 缓存配置 ==========
-  // 默认缓存时间（秒，仅 GET 请求）
-  defaultCacheTTL: 3600,
-
-  // 静态资源缓存时间（秒）
-  staticCacheTTL: 86400, // 24小时
-
-  // 动态内容缓存时间（秒）
-  dynamicCacheTTL: 300, // 5分钟
-
-  // 是否启用 Edge Cache（使用 Cloudflare 边缘缓存）
-  enableEdgeCache: true,
-
-  // 缓存键包含查询参数
-  cacheIncludeQuery: true,
-
-  // 静态资源扩展名（长期缓存）
-  staticExtensions: [
-    '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp', '.avif',
-    '.woff', '.woff2', '.ttf', '.eot', '.otf',
-    '.mp3', '.mp4', '.webm', '.ogg', '.wav',
-    '.pdf', '.zip', '.rar', '.7z', '.tar', '.gz',
-  ],
-
-  // 不缓存的路径模式
-  noCachePaths: [
-    '/api/auth', '/api/login', '/api/logout',
-    '/api/session', '/api/user',
-    '/webhook', '/callback',
-  ],
+  userAgent: 'Cloudflare-Workers-Proxy/1.1',
 
   // 域名黑名单（禁止代理的域名）
   blockedDomains: [
     // 本地地址
-    'localhost', '127.0.0.1', '0.0.0.0', '::1',
-    // 内网地址段
-    '10.', '172.16.', '192.168.', 'internal', 'local',
-    // 容器镜像仓库
-    'docker.io', 'hub.docker.com', 'registry.hub.docker.com', 'docker.com',
-    'registry-1.docker.io', 'ghcr.io', 'gcr.io', 'quay.io', 'mcr.microsoft.com',
-    // 云服务商内部服务
-    'metadata.google.internal', '169.254.169.254', 'kubernetes.default.svc', 'rancher.internal',
-    // 金融支付相关
-    'paypal.com', 'stripe.com', 'alipay.com', 'pay.weixin.qq.com',
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '::1',
+
+    // 内网地址段（通过域名匹配）
+    '10.',
+    '172.16.',
+    '192.168.',
+    'internal',
+    'local',
+
+    // 容器镜像仓库（通常需要认证，代理意义不大）
+    'docker.io',
+    'hub.docker.com',
+    'registry.hub.docker.com',
+    'docker.com',
+    'registry-1.docker.io',
+    'ghcr.io', // GitHub Container Registry
+    'gcr.io', // Google Container Registry
+    'quay.io', // Red Hat Quay
+    'mcr.microsoft.com', // Microsoft Container Registry
+
+    // 云服务商内部服务（可能导致安全问题）
+    'metadata.google.internal',
+    '169.254.169.254', // AWS/GCP metadata service
+    'kubernetes.default.svc',
+    'rancher.internal',
+
+    // 金融支付相关（安全考虑）
+    'paypal.com',
+    'stripe.com',
+    'alipay.com',
+    'pay.weixin.qq.com',
+
     // 政府和敏感机构
-    'gov.cn', 'mil.cn', 'gov', 'mil',
+    'gov.cn',
+    'mil.cn',
+    'gov',
+    'mil',
+
     // 可能被滥用的服务
-    'ipify.org', 'ifconfig.me', 'icanhazip.com', 'api.ipify.org',
+    'ipify.org',
+    'ifconfig.me',
+    'icanhazip.com',
+    'api.ipify.org',
   ],
 
-  // 域名白名单（留空表示允许所有）
+  // 域名白名单（留空表示允许所有，建议生产环境配置）
   allowedDomains: [],
 
-  // 危险路径黑名单
+  // 危险路径黑名单（防止路径遍历和敏感文件访问）
   blockedPaths: [
-    '/.env', '/.git', '/admin', '/phpmyadmin',
-    '/.aws', '/.ssh', '/etc/passwd', '/etc/shadow',
-    '/../', '/./.',
+    '/.env',
+    '/.git',
+    '/admin',
+    '/phpmyadmin',
+    '/.aws',
+    '/.ssh',
+    '/etc/passwd',
+    '/etc/shadow',
+    '/../',
+    '/./.',
   ],
 
-  // 是否启用详细错误信息
+  // 是否启用详细错误信息（生产环境建议关闭）
   verboseErrors: false,
 
   // 是否启用性能监控
@@ -107,16 +116,11 @@ export default {
         return jsonResponse({
           status: 'healthy',
           timestamp: new Date().toISOString(),
-          version: '1.2',
-          cache: {
-            edge: CONFIG.enableEdgeCache,
-            defaultTTL: CONFIG.defaultCacheTTL,
-            staticTTL: CONFIG.staticCacheTTL,
-          },
+          version: '1.1',
         });
       }
 
-      // 根路径
+      // 根路径状态检查
       if (url.pathname === '/' || url.pathname === '') {
         return corsResponse(
           new Response(getUsageHTML(), {
@@ -141,7 +145,9 @@ export default {
       // 用户认证检查
       if (CONFIG.authUser) {
         if (parts.length < 2) {
-          return corsResponse(textResponse('Bad Request: Invalid path format', 400));
+          return corsResponse(
+            textResponse('Bad Request: Invalid path format', 400),
+          );
         }
         if (parts[0] !== CONFIG.authUser) {
           return corsResponse(textResponse('Forbidden: Invalid user', 403));
@@ -150,7 +156,9 @@ export default {
       }
 
       if (parts.length <= startIndex) {
-        return corsResponse(textResponse('Bad Request: No target specified', 400));
+        return corsResponse(
+          textResponse('Bad Request: No target specified', 400),
+        );
       }
 
       // 提取目标 URL
@@ -159,48 +167,120 @@ export default {
 
       // 协议验证
       if (!['http:', 'https:'].includes(upstreamUrl.protocol)) {
-        return corsResponse(jsonResponse({
-          error: 'Invalid Protocol',
-          message: 'Only HTTP and HTTPS protocols are supported',
-        }, 400));
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Invalid Protocol',
+              message: 'Only HTTP and HTTPS protocols are supported',
+              protocol: upstreamUrl.protocol,
+            },
+            400,
+          ),
+        );
       }
 
       // 域名验证
       const hostname = upstreamUrl.hostname.toLowerCase();
 
-      if (CONFIG.blockedDomains.some(d =>
-        hostname === d || hostname.endsWith('.' + d) ||
-        hostname.startsWith(d) || hostname.includes(d)
-      )) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Domain is blocked by security policy',
-        }, 403));
+      // 检查黑名单
+      if (
+        CONFIG.blockedDomains.some(
+          d =>
+            hostname === d ||
+            hostname.endsWith('.' + d) ||
+            hostname.startsWith(d) ||
+            hostname.includes(d),
+        )
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Domain is blocked by security policy',
+              domain: hostname,
+              reason:
+                'This domain is in the blocklist for security or compliance reasons',
+            },
+            403,
+          ),
+        );
       }
 
-      if (CONFIG.allowedDomains.length > 0 &&
-          !CONFIG.allowedDomains.some(d => hostname === d || hostname.endsWith('.' + d))) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Domain not in allowed list',
-        }, 403));
+      // 检查白名单
+      if (
+        CONFIG.allowedDomains.length > 0 &&
+        !CONFIG.allowedDomains.some(
+          d => hostname === d || hostname.endsWith('.' + d),
+        )
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Domain not in allowed list',
+              domain: hostname,
+              hint: 'Only whitelisted domains are permitted',
+            },
+            403,
+          ),
+        );
       }
 
       // 路径安全检查
       const path = upstreamUrl.pathname.toLowerCase();
-      if (CONFIG.blockedPaths.some(p => path.includes(p))) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Requested path is blocked',
-        }, 403));
+      if (
+        CONFIG.blockedPaths &&
+        CONFIG.blockedPaths.some(p => path.includes(p))
+      ) {
+        return corsResponse(
+          jsonResponse(
+            {
+              error: 'Forbidden',
+              message: 'Requested path contains blocked patterns',
+              path: upstreamUrl.pathname,
+              reason: 'This path is blocked for security reasons',
+            },
+            403,
+          ),
+        );
       }
 
-      // 私有 IP 检查
-      if (isPrivateIP(hostname)) {
-        return corsResponse(jsonResponse({
-          error: 'Forbidden',
-          message: 'Access to private IP is not allowed',
-        }, 403));
+      // IP 地址直接访问检查（防止内网探测）
+      if (
+        /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) ||
+        /^\[?[0-9a-f:]+\]?$/i.test(hostname)
+      ) {
+        // 检查是否是私有 IP
+        if (isPrivateIP(hostname)) {
+          return corsResponse(
+            jsonResponse(
+              {
+                error: 'Forbidden',
+                message: 'Direct access to private IP addresses is not allowed',
+                ip: hostname,
+                reason: 'Security policy prevents access to internal networks',
+              },
+              403,
+            ),
+          );
+        }
+      }
+
+      // 请求体大小检查
+      if (CONFIG.maxBodySize > 0 && request.body) {
+        const contentLength = request.headers.get('content-length');
+        if (contentLength && parseInt(contentLength) > CONFIG.maxBodySize) {
+          return corsResponse(
+            jsonResponse(
+              {
+                error: 'Payload Too Large',
+                message: `Request body exceeds maximum size of ${CONFIG.maxBodySize} bytes`,
+                maxSize: CONFIG.maxBodySize,
+              },
+              413,
+            ),
+          );
+        }
       }
 
       // 构建代理请求
@@ -213,16 +293,7 @@ export default {
       headers.set('host', upstreamUrl.host);
       headers.set('user-agent', CONFIG.userAgent);
 
-      // 添加缓存相关请求头
-      if (method === 'GET') {
-        // 支持条件请求以提高缓存效率
-        const ifNoneMatch = request.headers.get('if-none-match');
-        const ifModifiedSince = request.headers.get('if-modified-since');
-        if (ifNoneMatch) headers.set('if-none-match', ifNoneMatch);
-        if (ifModifiedSince) headers.set('if-modified-since', ifModifiedSince);
-      }
-
-      // 发起请求
+      // 发起请求（支持超时控制和重定向跟随）
       let response = await fetchWithTimeout(
         upstreamUrl.toString(),
         {
@@ -236,42 +307,29 @@ export default {
       // 处理响应
       response = stripSecurityHeaders(response);
 
-      // 智能缓存处理
-      const cacheConfig = getCacheConfig(upstreamUrl.pathname, response);
-      const finalHeaders = new Headers(response.headers);
+      // 添加缓存控制（增强版）
+      if (method === 'GET' && CONFIG.cacheTTL > 0) {
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set('cache-control', `public, max-age=${CONFIG.cacheTTL}`);
 
-      if (method === 'GET' && cacheConfig.cacheable) {
-        // 设置缓存控制头
-        finalHeaders.set('cache-control', cacheConfig.cacheControl);
-
-        // 添加 Vary 头优化缓存
-        if (!finalHeaders.has('vary')) {
-          finalHeaders.set('vary', 'Accept-Encoding, Accept');
+        // 添加 Vary 头以支持更好的缓存
+        if (!newHeaders.has('vary')) {
+          newHeaders.set('vary', 'Accept-Encoding');
         }
 
-        // 添加缓存标识
-        finalHeaders.set('x-cache-ttl', `${cacheConfig.ttl}s`);
-        finalHeaders.set('x-cache-type', cacheConfig.type);
-
-        // Edge Cache 支持
-        if (CONFIG.enableEdgeCache) {
-          finalHeaders.set('cf-cache-status', 'DYNAMIC');
-          // s-maxage 用于 CDN 边缘缓存
-          if (!finalHeaders.get('cache-control')?.includes('s-maxage')) {
-            const currentCC = finalHeaders.get('cache-control') || '';
-            finalHeaders.set('cache-control', `${currentCC}, s-maxage=${cacheConfig.ttl}`);
-          }
-        }
-      } else if (method !== 'GET' && method !== 'HEAD') {
-        // 非 GET/HEAD 请求不缓存
-        finalHeaders.set('cache-control', 'no-store, no-cache, must-revalidate');
+        response = new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders,
+        });
       }
 
       // 计算性能指标
       const responseTime = Date.now() - startTime;
 
-      // 添加调试头
-      finalHeaders.set('x-proxy-by', 'CF-Workers-Proxy-v1.2');
+      // 添加调试和性能头
+      const finalHeaders = new Headers(response.headers);
+      finalHeaders.set('x-proxy-by', 'Cloudflare-Workers-Enhanced-v1.1');
       finalHeaders.set('x-target-url', upstreamUrl.toString());
 
       if (CONFIG.enableMetrics) {
@@ -286,7 +344,6 @@ export default {
           headers: finalHeaders,
         }),
       );
-
     } catch (error) {
       console.error('Proxy Error:', error);
 
@@ -296,6 +353,7 @@ export default {
         timestamp: new Date().toISOString(),
       };
 
+      // 在开发模式下添加详细错误信息
       if (CONFIG.verboseErrors && error.stack) {
         errorResponse.stack = error.stack.split('\n').slice(0, 5);
       }
@@ -305,108 +363,16 @@ export default {
   },
 };
 
-/* ========== 缓存相关函数 ========== */
-
-/**
- * 获取缓存配置
- */
-function getCacheConfig(pathname, response) {
-  const lowerPath = pathname.toLowerCase();
-
-  // 检查是否为不缓存路径
-  if (CONFIG.noCachePaths.some(p => lowerPath.includes(p))) {
-    return {
-      cacheable: false,
-      ttl: 0,
-      type: 'no-cache',
-      cacheControl: 'no-store, no-cache, must-revalidate',
-    };
-  }
-
-  // 检查响应状态码
-  const status = response.status;
-  if (status !== 200 && status !== 301 && status !== 302 && status !== 304) {
-    return {
-      cacheable: false,
-      ttl: 0,
-      type: 'error',
-      cacheControl: 'no-store',
-    };
-  }
-
-  // 检查响应头中的缓存控制
-  const originCC = response.headers.get('cache-control') || '';
-  if (originCC.includes('no-store') || originCC.includes('private')) {
-    return {
-      cacheable: false,
-      ttl: 0,
-      type: 'origin-no-cache',
-      cacheControl: originCC,
-    };
-  }
-
-  // 检查是否为静态资源
-  const isStatic = CONFIG.staticExtensions.some(ext => lowerPath.endsWith(ext));
-
-  if (isStatic) {
-    return {
-      cacheable: true,
-      ttl: CONFIG.staticCacheTTL,
-      type: 'static',
-      cacheControl: `public, max-age=${CONFIG.staticCacheTTL}, immutable`,
-    };
-  }
-
-  // 检查 Content-Type
-  const contentType = response.headers.get('content-type') || '';
-
-  // 图片、字体、媒体类型 -> 长期缓存
-  if (contentType.match(/^(image|font|audio|video)\//)) {
-    return {
-      cacheable: true,
-      ttl: CONFIG.staticCacheTTL,
-      type: 'media',
-      cacheControl: `public, max-age=${CONFIG.staticCacheTTL}`,
-    };
-  }
-
-  // HTML 页面 -> 短期缓存
-  if (contentType.includes('text/html')) {
-    return {
-      cacheable: true,
-      ttl: CONFIG.dynamicCacheTTL,
-      type: 'html',
-      cacheControl: `public, max-age=${CONFIG.dynamicCacheTTL}, stale-while-revalidate=60`,
-    };
-  }
-
-  // JSON/API 响应 -> 短期缓存
-  if (contentType.includes('application/json')) {
-    return {
-      cacheable: true,
-      ttl: CONFIG.dynamicCacheTTL,
-      type: 'api',
-      cacheControl: `public, max-age=${CONFIG.dynamicCacheTTL}, stale-while-revalidate=30`,
-    };
-  }
-
-  // 默认缓存策略
-  return {
-    cacheable: true,
-    ttl: CONFIG.defaultCacheTTL,
-    type: 'default',
-    cacheControl: `public, max-age=${CONFIG.defaultCacheTTL}`,
-  };
-}
-
 /* ========== 核心函数 ========== */
 
 /**
- * 解析上游 URL
+ * 解析上游 URL（支持多种格式）
  */
 function parseUpstreamUrl(path, search) {
+  // 处理 https:/ 和 http:/ 格式（单斜杠）
   let p = path.replace(/^(https?):\/(?!\/)/, '$1://');
 
+  // 如果没有协议，添加默认协议
   if (!p.startsWith('http://') && !p.startsWith('https://')) {
     p = CONFIG.defaultProtocol + '://' + p;
   }
@@ -421,7 +387,7 @@ function parseUpstreamUrl(path, search) {
 }
 
 /**
- * 超时控制的 fetch
+ * 支持超时控制的 fetch
  */
 async function fetchWithTimeout(url, options, timeout) {
   const controller = new AbortController();
@@ -445,21 +411,29 @@ async function fetchWithTimeout(url, options, timeout) {
 }
 
 /**
- * 重定向跟随的 fetch
+ * 支持重定向跟随的 fetch
  */
 async function fetchWithRedirect(url, options, redirectCount = 0) {
-  const response = await fetch(new Request(url, {
-    ...options,
-    redirect: 'manual',
-  }));
+  const response = await fetch(
+    new Request(url, {
+      ...options,
+      redirect: 'manual',
+    }),
+  );
 
+  // 检查是否需要跟随重定向
   if (isRedirect(response.status) && redirectCount < CONFIG.maxRedirects) {
     const location = response.headers.get('location');
     if (location) {
       try {
         const nextUrl = new URL(location, url);
-        return await fetchWithRedirect(nextUrl.toString(), options, redirectCount + 1);
+        return await fetchWithRedirect(
+          nextUrl.toString(),
+          options,
+          redirectCount + 1,
+        );
       } catch (e) {
+        // 重定向 URL 无效，返回原响应
         return response;
       }
     }
@@ -469,27 +443,44 @@ async function fetchWithRedirect(url, options, redirectCount = 0) {
 }
 
 /**
- * 清理客户端请求头
+ * 清理客户端相关请求头（隐藏真实 IP）
  */
 function stripClientHeaders(headers) {
   const clientHeaders = [
-    'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip', 'CF-Connecting-IP',
-    'true-client-ip', 'True-Client-IP', 'x-client-ip', 'x-forwarded',
-    'forwarded-for', 'forwarded', 'cf-ray', 'CF-Ray', 'cf-visitor', 'CF-Visitor',
+    'x-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
+    'CF-Connecting-IP',
+    'true-client-ip',
+    'True-Client-IP',
+    'x-client-ip',
+    'x-forwarded',
+    'forwarded-for',
+    'forwarded',
+    'cf-ray',
+    'CF-Ray',
+    'cf-visitor',
+    'CF-Visitor',
   ];
+
   clientHeaders.forEach(h => headers.delete(h));
 }
 
 /**
- * 移除安全响应头
+ * 移除可能导致问题的安全响应头
  */
 function stripSecurityHeaders(response) {
   const headers = new Headers(response.headers);
+
   const securityHeaders = [
-    'content-security-policy', 'content-security-policy-report-only',
-    'x-frame-options', 'x-xss-protection', 'strict-transport-security',
+    'content-security-policy',
+    'content-security-policy-report-only',
+    'x-frame-options',
+    'x-xss-protection',
+    'strict-transport-security',
     'x-content-security-policy',
   ];
+
   securityHeaders.forEach(h => headers.delete(h));
 
   return new Response(response.body, {
@@ -500,7 +491,7 @@ function stripSecurityHeaders(response) {
 }
 
 /**
- * CORS 响应
+ * 添加 CORS 头
  */
 function corsResponse(response) {
   const headers = new Headers(response.headers);
@@ -518,7 +509,7 @@ function corsResponse(response) {
 }
 
 /**
- * 文本响应
+ * 创建文本响应
  */
 function textResponse(text, status = 200) {
   return new Response(text, {
@@ -528,41 +519,60 @@ function textResponse(text, status = 200) {
 }
 
 /**
- * JSON 响应
+ * 创建 JSON 响应
  */
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+    },
   });
 }
 
 /**
- * 重定向状态码判断
+ * 判断是否为重定向状态码
  */
 function isRedirect(status) {
   return [301, 302, 303, 307, 308].includes(status);
 }
 
 /**
- * 私有 IP 检测
+ * 检查是否为私有 IP 地址
  */
 function isPrivateIP(ip) {
+  // IPv6 本地地址
   if (ip.includes(':')) {
-    return ip.startsWith('fe80:') || ip.startsWith('fc00:') ||
-           ip.startsWith('fd00:') || ip === '::1';
+    return (
+      ip.startsWith('fe80:') ||
+      ip.startsWith('fc00:') ||
+      ip.startsWith('fd00:') ||
+      ip === '::1'
+    );
   }
 
+  // IPv4 私有地址
   const parts = ip.split('.').map(p => parseInt(p, 10));
   if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
     return false;
   }
 
+  // 10.0.0.0/8
   if (parts[0] === 10) return true;
+
+  // 172.16.0.0/12
   if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+
+  // 192.168.0.0/16
   if (parts[0] === 192 && parts[1] === 168) return true;
+
+  // 127.0.0.0/8 (loopback)
   if (parts[0] === 127) return true;
+
+  // 169.254.0.0/16 (link-local)
   if (parts[0] === 169 && parts[1] === 254) return true;
+
+  // 0.0.0.0/8
   if (parts[0] === 0) return true;
 
   return false;
@@ -580,7 +590,7 @@ function getUsageHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>动态反向代理 v1.2</title>
+  <title>动态反向代理 - 增强版</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -596,20 +606,37 @@ function getUsageHTML() {
       background: white;
       border-radius: 16px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      max-width: 900px;
+      max-width: 850px;
       width: 100%;
       padding: 40px;
     }
-    h1 { color: #333; margin-bottom: 10px; font-size: 2.2em; }
-    .subtitle { color: #666; margin-bottom: 30px; font-size: 1.1em; }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 2.2em;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
     .auth-notice {
       background: #fef3c7;
       border-left: 4px solid #f59e0b;
       padding: 15px;
       border-radius: 4px;
       margin-bottom: 25px;
+      font-size: 0.95em;
     }
-    .section { margin-bottom: 30px; }
+    .auth-notice code {
+      background: rgba(0,0,0,0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
     h2 {
       color: #667eea;
       margin-bottom: 15px;
@@ -622,120 +649,184 @@ function getUsageHTML() {
       border-left: 4px solid #667eea;
       padding: 15px;
       border-radius: 4px;
-      font-family: monospace;
+      overflow-x: auto;
       margin: 10px 0;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    .example {
+      color: #2c5282;
+      line-height: 1.8;
+    }
+    .arrow {
+      color: #667eea;
+      font-weight: bold;
+      margin: 8px 0;
+    }
+    ul {
+      margin-left: 20px;
+      margin-top: 10px;
+    }
+    li {
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+    .highlight {
+      background: #fef3c7;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 500;
     }
     .feature-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 15px;
+      margin-top: 15px;
     }
     .feature-item {
       background: #f8f9fa;
-      padding: 15px;
-      border-radius: 8px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 0.9em;
     }
-    .feature-item strong { color: #333; display: block; margin-bottom: 5px; }
-    .feature-item small { color: #666; }
-    ul { margin-left: 20px; margin-top: 10px; }
-    li { margin-bottom: 8px; line-height: 1.6; }
     .footer {
       text-align: center;
       color: #999;
       margin-top: 40px;
       padding-top: 20px;
       border-top: 1px solid #eee;
-    }
-    .cache-info {
-      background: #e8f5e9;
-      border-left: 4px solid #4caf50;
-      padding: 15px;
-      border-radius: 4px;
-      margin: 15px 0;
+      font-size: 0.9em;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🚀 动态反向代理 v1.2</h1>
-    <p class="subtitle">高性能、智能缓存的 Cloudflare Workers 代理服务</p>
+    <h1>🚀 动态反向代理 - 增强版</h1>
+    <p class="subtitle">简洁、高效、功能强大的 Cloudflare Workers 代理服务</p>
 
     ${authInfo}
 
     <div class="section">
       <h2>📖 使用格式</h2>
       <div class="code-block">
-        ${CONFIG.authUser
-          ? `https://您的域名/${CONFIG.authUser}/目标URL`
-          : `https://您的域名/目标URL`}
+        ${
+          CONFIG.authUser
+            ? `https://<span class="highlight">您的域名</span>/<span class="highlight">${CONFIG.authUser}</span>/<span class="highlight">目标URL</span>`
+            : `https://<span class="highlight">您的域名</span>/<span class="highlight">目标URL</span>`
+        }
       </div>
     </div>
 
     <div class="section">
-      <h2>✨ 核心特性</h2>
+      <h2>💡 使用示例</h2>
+      <div class="code-block">
+        <div class="example">
+          ${
+            CONFIG.authUser
+              ? `访问: https://your-domain.com/${CONFIG.authUser}/api.github.com/users`
+              : `访问: https://your-domain.com/api.github.com/users`
+          }
+        </div>
+        <div class="arrow">↓ 实际代理到</div>
+        <div class="example">
+          https://api.github.com/users
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="example">
+          支持查询参数和路径：<br>
+          ${
+            CONFIG.authUser
+              ? `https://your-domain.com/${CONFIG.authUser}/example.com/api/data?key=value`
+              : `https://your-domain.com/example.com/api/data?key=value`
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>✨ 增强特性</h2>
       <div class="feature-grid">
         <div class="feature-item">
-          <strong>🔄 智能重定向</strong>
-          <small>自动跟随 ${CONFIG.maxRedirects} 次重定向</small>
+          <strong>🔄 智能重定向</strong><br>
+          自动跟随 ${CONFIG.maxRedirects} 次重定向
         </div>
         <div class="feature-item">
-          <strong>🔒 隐私保护</strong>
-          <small>完全隐藏客户端 IP</small>
+          <strong>🔒 IP 隐藏</strong><br>
+          完全隐藏客户端 IP 信息
         </div>
         <div class="feature-item">
-          <strong>⚡ 智能缓存</strong>
-          <small>静态资源 ${CONFIG.staticCacheTTL / 3600}h / 动态 ${CONFIG.dynamicCacheTTL / 60}min</small>
+          <strong>⚡ 智能缓存</strong><br>
+          GET 请求缓存 ${CONFIG.cacheTTL}秒
         </div>
         <div class="feature-item">
-          <strong>🌐 Edge Cache</strong>
-          <small>Cloudflare 边缘节点缓存</small>
+          <strong>🛡️ 安全优化</strong><br>
+          自动处理安全响应头
         </div>
         <div class="feature-item">
-          <strong>🛡️ 安全优化</strong>
-          <small>域名黑名单 + 路径检查</small>
+          <strong>🌍 完整 CORS</strong><br>
+          支持所有跨域请求
         </div>
         <div class="feature-item">
-          <strong>🌍 完整 CORS</strong>
-          <small>支持所有跨域请求</small>
+          <strong>🎯 灵活 URL</strong><br>
+          支持多种 URL 格式
         </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>📊 缓存策略</h2>
-      <div class="cache-info">
-        <strong>智能缓存分类：</strong><br>
-        • <strong>静态资源</strong>（JS/CSS/图片/字体）：${CONFIG.staticCacheTTL / 3600} 小时<br>
-        • <strong>HTML 页面</strong>：${CONFIG.dynamicCacheTTL / 60} 分钟（支持 stale-while-revalidate）<br>
-        • <strong>API 响应</strong>：${CONFIG.dynamicCacheTTL / 60} 分钟<br>
-        • <strong>其他内容</strong>：${CONFIG.defaultCacheTTL / 60} 分钟<br>
-        • <strong>Edge Cache</strong>：${CONFIG.enableEdgeCache ? '已启用' : '未启用'}
+        <div class="feature-item">
+          <strong>⏱️ 超时控制</strong><br>
+          ${CONFIG.requestTimeout / 1000}秒请求超时
+        </div>
+        <div class="feature-item">
+          <strong>📊 性能监控</strong><br>
+          实时响应时间追踪
+        </div>
       </div>
     </div>
 
     <div class="section">
       <h2>⚙️ 当前配置</h2>
       <ul>
-        <li><strong>版本：</strong>v1.2 缓存优化版</li>
-        <li><strong>认证：</strong>${CONFIG.authUser || '未启用'}</li>
+        <li><strong>版本：</strong>v1.1 优化增强版</li>
+        <li><strong>用户认证：</strong>${
+          CONFIG.authUser ? `已启用 (${CONFIG.authUser})` : '未启用'
+        }</li>
         <li><strong>默认协议：</strong>${CONFIG.defaultProtocol.toUpperCase()}</li>
+        <li><strong>最大重定向：</strong>${CONFIG.maxRedirects} 次</li>
+        <li><strong>缓存时间：</strong>${CONFIG.cacheTTL} 秒</li>
         <li><strong>请求超时：</strong>${CONFIG.requestTimeout / 1000} 秒</li>
+        <li><strong>最大请求体：</strong>${
+          CONFIG.maxBodySize > 0
+            ? (CONFIG.maxBodySize / 1024 / 1024).toFixed(1) + ' MB'
+            : '不限制'
+        }</li>
         <li><strong>黑名单域名：</strong>${CONFIG.blockedDomains.length} 个</li>
+        <li><strong>白名单域名：</strong>${
+          CONFIG.allowedDomains.length > 0
+            ? CONFIG.allowedDomains.length + ' 个'
+            : '全部允许'
+        }</li>
+        <li><strong>性能监控：</strong>${
+          CONFIG.enableMetrics ? '已启用' : '未启用'
+        }</li>
       </ul>
     </div>
 
     <div class="section">
       <h2>🔧 API 端点</h2>
       <ul>
-        <li><code>/health</code> - 健康检查（返回缓存配置信息）</li>
-        <li><code>/</code> - 使用说明</li>
-        <li><code>/:target</code> - 代理请求</li>
+        <li><code>/health</code> 或 <code>/ping</code> - 健康检查</li>
+        <li><code>/</code> - 使用说明页面</li>
+        ${
+          CONFIG.authUser
+            ? `<li><code>/${CONFIG.authUser}/:target</code> - 代理请求（需认证）</li>`
+            : '<li><code>/:target</code> - 代理请求</li>'
+        }
       </ul>
     </div>
 
     <div class="footer">
-      Powered by Cloudflare Workers | v1.2 Cache-Optimized<br>
-      <small>⚡ 高性能 · 📦 智能缓存 · 🌍 全球加速</small>
+      Powered by Cloudflare Workers | Enhanced Dynamic Proxy v1.1<br>
+      <small>⚡ 高性能 · 🔒 安全可靠 · 🌍 全球加速</small>
     </div>
   </div>
 </body>
